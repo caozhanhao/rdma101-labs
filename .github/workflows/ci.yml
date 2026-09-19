@@ -44,7 +44,8 @@ jobs:
 
   rdma:
     name: RXE and Engine skeletons
-    runs-on: ubuntu-24.04
+    # Azure 6.17 enables CONFIG_RDMA_RXE on arm64, but disables it on amd64.
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 20
     env:
       R101_DEVICE: rxe0

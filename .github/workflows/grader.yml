@@ -61,7 +61,9 @@ jobs:
           )
           echo "R101_GID_INDEX=$gid_index" >> "$GITHUB_ENV"
       - name: Grade labs
-        run: uv run --locked python scripts/grader.py
+        run: |
+          sudo prlimit --pid $$ --memlock=unlimited:unlimited
+          uv run --locked python scripts/grader.py
       - uses: actions/upload-artifact@v4
         with:
           name: rdma101-grades

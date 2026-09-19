@@ -1,0 +1,11 @@
+[package]
+name = "rdma101-rust"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+rdma-mummy-sys = "=0.2.5"

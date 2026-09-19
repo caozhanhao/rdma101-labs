@@ -1,0 +1,103 @@
+name: CI
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  CARGO_TARGET_DIR: ${{ github.workspace }}/build/rust
+  RUSTUP_TOOLCHAIN: stable
+jobs:
+  internal:
+    name: Framework checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.5"
+          python-version: "3.12"
+          enable-cache: true
+      - name: Python environment
+        run: uv sync --locked
+      - name: Build and generation dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libibverbs-dev clang libclang-dev
+          rustup toolchain install stable --profile minimal --component rustfmt
+          cargo fetch --manifest-path transfer-engine/rust/Cargo.toml --locked
+          cargo +stable install bindgen-cli --version 0.72.1 --locked
+      - name: Check formatting
+        run: uv run --locked python scripts/format.py --check
+      - name: Check generated RPC modules
+        run: uv run --locked python scripts/generate_rpc.py --check
+      - name: Check generated Rust bindings
+        run: uv run --locked python scripts/generate_rust_bindings.py --check
+      - name: Build verbs probe
+        run: uv run --locked python -c 'from tests.verbs_probe import build_verbs_probe; build_verbs_probe()'
+      - name: Internal tests
+        run: uv run --locked python -m pytest tests/internal -v
+
+  rdma:
+    name: RXE and Engine skeletons
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      R101_DEVICE: rxe0
+      R101_PORT: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.5"
+          python-version: "3.12"
+          enable-cache: true
+      - name: Python environment
+        run: uv sync --locked
+      - name: Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libibverbs-dev ibverbs-providers ibverbs-utils rdma-core iproute2 clang libclang-dev
+          if ! modinfo rdma_rxe >/dev/null 2>&1; then
+            sudo apt-get install -y "linux-modules-extra-$(uname -r)"
+          fi
+      - name: Prepare RXE
+        run: |
+          sudo modprobe rdma_rxe
+          sudo modprobe ib_uverbs
+          netdev=$(ip -j route show default | python3 -c 'import json, sys; print(json.load(sys.stdin)[0]["dev"])')
+          sudo rdma link add "$R101_DEVICE" type rxe netdev "$netdev"
+          sudo udevadm settle
+          gid_index=$(python3 - <<'PY'
+          from ipaddress import IPv6Address
+          import os
+          from pathlib import Path
+          gids = Path("/sys/class/infiniband") / os.environ["R101_DEVICE"] / "ports" / os.environ["R101_PORT"] / "gids"
+          for gid in sorted(gids.iterdir(), key=lambda p: int(p.name)):
+              if IPv6Address(gid.read_text().strip()).ipv4_mapped:
+                  print(gid.name)
+                  break
+          else:
+              raise SystemExit("No IPv4 GID found for RXE")
+          PY
+          )
+          echo "R101_GID_INDEX=$gid_index" >> "$GITHUB_ENV"
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+      - name: Build C, C++ and Rust libraries
+        run: uv run --locked python scripts/build.py
+      - name: Rust checks
+        run: |
+          # Unimplemented methods retain their parameter names.
+          cargo +stable clippy --manifest-path transfer-engine/rust/Cargo.toml --locked -- -D warnings -A unused-variables
+      - name: Lab 0 environment and API checks
+        run: uv run --locked python -m pytest tests/engine --rdma -m lab0 -v
+      - name: Collect Lab tests
+        run: uv run --locked python -m pytest tests/engine --collect-only -q

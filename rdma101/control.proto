@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package rdma101;
+
+// The control plane carries opaque native metadata, never transfer payloads.
+service Control {
+  rpc Connect(Offer) returns (Offer);
+  rpc Ready(Update) returns (Snapshot);
+  rpc Changed(Update) returns (Empty);
+  rpc Close(Connection) returns (Empty);
+}
+
+message Empty {}
+
+message Snapshot {
+  uint64 version = 1;
+  repeated bytes memories = 2;
+}
+
+message Connection {
+  // The sender's advertised endpoint and unique ID for this connection.
+  string endpoint = 1;
+  string id = 2;
+}
+
+message Offer {
+  Connection connection = 1;
+  bytes metadata = 2;
+}
+
+message Update {
+  Connection connection = 1;
+  Snapshot snapshot = 2;
+}

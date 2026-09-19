@@ -1,0 +1,45 @@
+[project]
+name = "rdma101-labs"
+version = "0.1.0"
+requires-python = ">=3.9"
+dependencies = [
+    "cffi==2.0.0",
+    "grpcio==1.78.0",
+    "protobuf==6.33.5",
+]
+
+[dependency-groups]
+dev = [
+    "clang-format==23.1.1",
+    "grpcio-tools==1.78.0",
+    "mdformat==0.7.22",
+    "mdformat-gfm==0.4.1",
+    "pytest==8.4.2",
+    "ruff==0.16.7",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+indent-width = 4
+extend-exclude = ["build", "target", "*.md", "rdma101/generated"]
+force-exclude = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests/engine"]
+addopts = "--strict-config --strict-markers"
+markers = [
+    "rdma: requires Linux and a working RDMA device (enable with --rdma)",
+    "lab0: RDMA environment and Engine C ABI smoke checks",
+    "lab1: synchronous WRITE",
+    "lab2: asynchronous submission and independent background progress",
+    "lab3: multi-request slicing, validation and per-task status",
+    "lab4: bounded send window and multiple live batches",
+    "lab5: batched WRs, selective signaling and tail completion",
+    "lab6: messages, notifications and inline",
+    "lab7: RDMA READ",
+    "lab8: RDMA atomics",
+]

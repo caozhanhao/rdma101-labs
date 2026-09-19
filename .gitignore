@@ -1,0 +1,10 @@
+build/
+target/
+__pycache__/
+*.pyc
+.DS_Store
+.venv/
+.pytest_cache/
+.ruff_cache/
+.vscode/
+tmp

@@ -1,0 +1,100 @@
+name: RDMA101 grader
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TZ: Asia/Shanghai
+
+concurrency:
+  group: rdma101-grader-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  grader:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.repository.name, 'rdma-camp-')
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 75
+    env:
+      R101_DEVICE: rxe0
+      R101_PORT: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9
+        with:
+          version: "0.12.5"
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Prepare build and RXE dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libibverbs-dev ibverbs-providers ibverbs-utils rdma-core iproute2 clang libclang-dev
+          if ! modinfo rdma_rxe >/dev/null 2>&1; then
+            sudo apt-get install -y "linux-modules-extra-$(uname -r)"
+          fi
+          sudo modprobe rdma_rxe
+          sudo modprobe ib_uverbs
+          netdev=$(ip -j route show default | python3 -c 'import json, sys; print(json.load(sys.stdin)[0]["dev"])')
+          sudo rdma link add "$R101_DEVICE" type rxe netdev "$netdev"
+          sudo udevadm settle
+          gid_index=$(python3 - <<'PY'
+          from ipaddress import IPv6Address
+          import os
+          from pathlib import Path
+          gids = Path("/sys/class/infiniband") / os.environ["R101_DEVICE"] / "ports" / os.environ["R101_PORT"] / "gids"
+          for gid in sorted(gids.iterdir(), key=lambda path: int(path.name)):
+              if IPv6Address(gid.read_text().strip()).ipv4_mapped:
+                  print(gid.name)
+                  break
+          else:
+              raise SystemExit("No IPv4 GID found for RXE")
+          PY
+          )
+          echo "R101_GID_INDEX=$gid_index" >> "$GITHUB_ENV"
+      - name: Grade labs
+        run: uv run --locked python scripts/grader.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rdma101-grades
+          path: grader-output
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: grader
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: rdma101-grades
+          path: grader-output
+      - name: Update grades branch
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --heads origin grades >/dev/null 2>&1; then
+            git fetch --no-tags --depth=1 origin grades
+            git checkout --detach FETCH_HEAD
+          else
+            git checkout --orphan grades
+            git rm -rf --ignore-unmatch .
+          fi
+          cp grader-output/*.txt .
+          cp grader-output/latest.json .
+          rm -rf grader-output
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add latest.json *.txt
+          git commit -m "grades: update RDMA101 score"
+          git push origin HEAD:grades

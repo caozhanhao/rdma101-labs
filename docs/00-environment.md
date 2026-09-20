@@ -114,10 +114,11 @@ sudo apt install -y \
 
 ### 获取仓库与 Python 环境
 
-下面假定仓库位于 `~/rdma101-labs`。已有仓库就直接进原目录，不要覆盖已有修改；新环境执行：
+下面假定仓库位于 `~/rdma101-labs`，新环境执行：
 
 ```bash
-git clone https://github.com/uestc-workshop-os-camp/rdma101-labs.git "$HOME/rdma101-labs"
+# 如果你来自光点计划 (https://csinfra.cn)，请 clone 活动页面为你创建的专属仓库，否则后续将无法通过 git push 提交代码。
+git clone https://github.com/caozhanhao/rdma101-labs.git "$HOME/rdma101-labs"
 cd "$HOME/rdma101-labs"
 ```
 
